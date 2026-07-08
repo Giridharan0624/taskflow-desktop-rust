@@ -91,8 +91,9 @@ pub struct AttendanceSession {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Attendance {
+    #[serde(default)]
     pub user_id: String,
     #[serde(default)]
     pub date: String,

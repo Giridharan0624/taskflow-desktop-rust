@@ -1,0 +1,169 @@
+name: Release
+
+# Tag-driven cross-platform release. Mirrors the Go app's flow:
+#   per-OS Tauri bundles -> SHA256SUMS -> Ed25519-sign -> GitHub Release.
+# The signature is what the in-app updater verifies (updater/verify.rs).
+#
+# Version must match across the tag, src-tauri/Cargo.toml, and
+# src-tauri/tauri.conf.json (e.g. tag v0.2.0 => version "0.2.0" in both files),
+# because the updater compares the release tag to the baked CARGO_PKG_VERSION
+# and matches installer filenames by that version.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # create releases + upload assets
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows
+            bundles: nsis
+            artifacts: |
+              src-tauri/target/release/bundle/nsis/*-setup.exe
+          - os: ubuntu-22.04
+            label: linux
+            bundles: appimage,deb
+            artifacts: |
+              src-tauri/target/release/bundle/appimage/*.AppImage
+              src-tauri/target/release/bundle/deb/*.deb
+          - os: macos-latest
+            label: macos
+            bundles: dmg
+            artifacts: |
+              src-tauri/target/release/bundle/dmg/*.dmg
+    runs-on: ${{ matrix.os }}
+    name: bundle (${{ matrix.label }})
+    # V2 config baked into the binary at build time (kept out of the repo).
+    env:
+      TASKFLOW_API_URL: ${{ secrets.TASKFLOW_API_URL }}
+      TASKFLOW_COGNITO_REGION: ${{ secrets.TASKFLOW_COGNITO_REGION }}
+      TASKFLOW_COGNITO_POOL_ID: ${{ secrets.TASKFLOW_COGNITO_POOL_ID }}
+      TASKFLOW_COGNITO_CLIENT_ID: ${{ secrets.TASKFLOW_COGNITO_CLIENT_ID }}
+      TASKFLOW_WEB_DASHBOARD_URL: ${{ secrets.TASKFLOW_WEB_DASHBOARD_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            patchelf \
+            build-essential \
+            curl wget file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.label }}-release
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build bundles
+        run: npm run tauri build -- --bundles ${{ matrix.bundles }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}-bundle
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    name: publish
+    env:
+      SIGN_KEY: ${{ secrets.RELEASE_SIGNING_KEY_B64 }}
+    steps:
+      - name: Resolve version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: staged
+
+      - name: Flatten into release-files/
+        run: |
+          mkdir -p release-files
+          find staged -type f \
+            \( -name '*-setup.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' \) \
+            -exec cp {} release-files/ \;
+          echo "=== release artifacts ==="
+          ls -la release-files
+
+      - name: Generate SHA256SUMS
+        working-directory: release-files
+        run: |
+          sha256sum * > SHA256SUMS
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS
+
+      - name: Sign SHA256SUMS (Ed25519)
+        if: env.SIGN_KEY != ''
+        env:
+          KEY_B64: ${{ secrets.RELEASE_SIGNING_KEY_B64 }}
+        run: |
+          python3 -m pip install --quiet pynacl
+          python3 - <<'PY'
+          import base64, os
+          from nacl.signing import SigningKey
+          key = SigningKey(base64.b64decode(os.environ["KEY_B64"]))
+          body = open("release-files/SHA256SUMS", "rb").read()
+          sig = key.sign(body).signature
+          open("release-files/SHA256SUMS.sig", "wb").write(base64.b64encode(sig))
+          print("SHA256SUMS signed -> SHA256SUMS.sig")
+          PY
+
+      - name: Warn if unsigned
+        if: env.SIGN_KEY == ''
+        run: |
+          echo "::warning::RELEASE_SIGNING_KEY_B64 not set — shipping UNSIGNED."
+          echo "::warning::Release builds of the app refuse to auto-install unsigned updates."
+
+      - name: Verify SHA256SUMS covers every artifact
+        working-directory: release-files
+        run: |
+          fail=0
+          for f in *; do
+            case "$f" in SHA256SUMS|SHA256SUMS.sig) continue;; esac
+            if ! grep -qi " [*]\?${f}\$" SHA256SUMS; then
+              echo "MISSING: $f not in SHA256SUMS"; fail=1
+            fi
+          done
+          [ "$fail" = 0 ] && echo "OK: all artifacts covered" || exit 1
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.VERSION }}"
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            release-files/*

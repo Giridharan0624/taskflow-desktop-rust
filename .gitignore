@@ -6,10 +6,20 @@ dist/
 # rust / tauri
 src-tauri/target/
 src-tauri/gen/
+# NOTE: src-tauri/Cargo.lock IS committed (this is an app binary, not a library).
 
-# local dev config (never commit real secrets)
+# generated mobile icon sets — desktop-only app doesn't ship these
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# local dev config + per-env build scripts (never commit real secrets)
 src-tauri/config.json
 config.json
+build-env.*.ps1
+!build-env.example.ps1
+
+# build/check logs
+*.log
 
 # os
 .DS_Store

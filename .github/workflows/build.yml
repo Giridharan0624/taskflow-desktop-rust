@@ -1,0 +1,71 @@
+name: Build (CI)
+
+# Compile the app on all three targets on every push/PR. This is the
+# cross-platform gate: it proves the Linux/macOS #[cfg] platform code and the
+# whole Tauri app build everywhere, not just on the Windows dev box.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows
+          - os: ubuntu-22.04
+            label: linux
+          - os: macos-latest
+            label: macos
+    runs-on: ${{ matrix.os }}
+    name: build (${{ matrix.label }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            patchelf \
+            build-essential \
+            curl wget file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.label }}
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      # Compile the Rust side (build.rs needs the frontend dist, built above).
+      # No TASKFLOW_* secrets needed — build.rs bakes empty strings and config
+      # only panics at runtime, so this purely checks that everything compiles.
+      - name: Compile Rust (all platform cfg)
+        run: cargo build --manifest-path src-tauri/Cargo.toml --locked

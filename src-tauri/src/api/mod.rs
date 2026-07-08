@@ -74,9 +74,11 @@ impl ApiClient {
         self.get_json("/users/me/tasks").await
     }
 
-    /// `GET /attendance/me`.
+    /// `GET /attendance/me`. The backend returns `null` when there's no record
+    /// for today yet — treat that as an empty (SIGNED_OUT) attendance.
     pub async fn get_my_attendance(&self) -> AppResult<Attendance> {
-        self.get_json("/attendance/me").await
+        let maybe: Option<Attendance> = self.get_json("/attendance/me").await?;
+        Ok(maybe.unwrap_or_default())
     }
 
     /// `POST /attendance/sign-in` (201). Body is snake_case with empty fields
