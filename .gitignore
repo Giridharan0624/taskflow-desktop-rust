@@ -18,8 +18,10 @@ config.json
 build-env.*.ps1
 !build-env.example.ps1
 
-# build/check logs
+# build/check/dev logs
 *.log
+devlog.txt
+tauri-build.log
 
 # os
 .DS_Store
