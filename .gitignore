@@ -1,0 +1,16 @@
+# frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# rust / tauri
+src-tauri/target/
+src-tauri/gen/
+
+# local dev config (never commit real secrets)
+src-tauri/config.json
+config.json
+
+# os
+.DS_Store
+Thumbs.db

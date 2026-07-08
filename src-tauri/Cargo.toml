@@ -1,0 +1,64 @@
+[package]
+name = "taskflow-desktop"
+version = "0.1.0"
+description = "TaskFlow desktop companion (Tauri v2)"
+authors = ["NeuroStack"]
+edition = "2021"
+rust-version = "1.77"
+
+# The Tauri app is a plain desktop binary (no mobile target), so a single
+# binary crate is enough — no lib.rs / cdylib split needed.
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rand = "0.8"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+sha2 = "0.10"
+ed25519-dalek = "2"
+semver = "1"
+
+# OS keyring for token persistence. Feature set: native backends on
+# Windows/macOS, Secret Service on Linux with the pure-Rust crypto provider.
+# NOTE: keyring v3 feature names are finicky — if the first per-platform
+# `cargo build` complains, adjust these (see keyring-rs docs) before touching code.
+keyring = { version = "3", features = [
+    "apple-native",
+    "windows-native",
+    "sync-secret-service",
+    "crypto-rust",
+] }
+
+# Windows activity-monitor FFI (idle / input / active-window).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_Graphics_Gdi",
+    "Win32_System_StationsAndDesktops",
+    "Win32_UI_Shell",
+] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

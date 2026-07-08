@@ -1,0 +1,7 @@
+{
+  "api_url": "https://<your-v2-api-id>.execute-api.ap-south-1.amazonaws.com/prod",
+  "cognito_region": "ap-south-1",
+  "cognito_user_pool_id": "ap-south-1_XXXXXXXXX",
+  "cognito_client_id": "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "web_dashboard_url": "http://localhost:3000"
+}

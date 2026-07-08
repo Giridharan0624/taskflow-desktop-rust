@@ -1,0 +1,4 @@
+# ed25519 release public key (base64), one line, no comment.
+# EMPTY = unsigned. Unlike the Go app (which silently skipped verification when
+# this was blank — a security bug), release builds here REFUSE to auto-install
+# until a real key is committed on the next line. See updater/verify.rs.
