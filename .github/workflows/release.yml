@@ -128,14 +128,12 @@ jobs:
 
       - name: Sign SHA256SUMS (Ed25519)
         if: env.SIGN_KEY != ''
-        env:
-          KEY_B64: ${{ secrets.RELEASE_SIGNING_KEY_B64 }}
         run: |
           python3 -m pip install --quiet pynacl
           python3 - <<'PY'
           import base64, os
           from nacl.signing import SigningKey
-          key = SigningKey(base64.b64decode(os.environ["KEY_B64"]))
+          key = SigningKey(base64.b64decode(os.environ["SIGN_KEY"]))
           body = open("release-files/SHA256SUMS", "rb").read()
           sig = key.sign(body).signature
           open("release-files/SHA256SUMS.sig", "wb").write(base64.b64encode(sig))
