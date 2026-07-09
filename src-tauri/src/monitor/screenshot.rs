@@ -1,9 +1,11 @@
 //! Primary-display screenshot capture + screen-lock detection.
 //!
-//! Windows uses GDI `BitBlt` (functional and dependency-light). DXGI Desktop
-//! Duplication — faster and able to capture some HW-accelerated/protected
-//! surfaces GDI misses — is a Windows performance follow-up. Linux/macOS capture
-//! lands with their per-OS work; until then they return None.
+//! Capture is cross-platform via `xcap` (Windows / macOS / Linux X11; Wayland
+//! goes through the desktop portal and may prompt). macOS requires Screen
+//! Recording (TCC) permission — a denied grant yields an empty/None capture.
+//!
+//! Screen-lock detection has no good cross-platform crate: Windows uses
+//! `OpenInputDesktop`; elsewhere we rely on the idle heuristic in the caller.
 
 /// Whether the workstation is locked / on the secure desktop, in which case we
 /// skip capture (avoids uploading a blank lock screen). On Windows a normal
@@ -30,79 +32,31 @@ pub fn is_screen_locked() -> bool {
 }
 
 /// Capture the primary display as a JPEG (quality 85). None on failure.
-#[cfg(windows)]
+///
+/// Uses `xcap` for capture, then encodes with the `image` crate. We pull raw
+/// RGBA bytes out of xcap's buffer (`into_raw()` → `Vec<u8>`, version-agnostic)
+/// and re-encode with our own `image` dependency, so xcap's internal `image`
+/// version never has to match ours.
 pub fn capture_jpeg() -> Option<Vec<u8>> {
-    use std::ptr::null_mut;
-    use windows_sys::Win32::Graphics::Gdi::{
-        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-        SRCCOPY,
-    };
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    let monitors = xcap::Monitor::all().ok()?;
+    // First monitor is the primary on every platform xcap supports.
+    let monitor = monitors.into_iter().next()?;
+    let rgba = monitor.capture_image().ok()?;
 
-    unsafe {
-        let w = GetSystemMetrics(SM_CXSCREEN);
-        let h = GetSystemMetrics(SM_CYSCREEN);
-        if w <= 0 || h <= 0 {
-            return None;
-        }
+    let (w, h) = (rgba.width(), rgba.height());
+    let raw = rgba.into_raw(); // RGBA8
 
-        let screen = GetDC(null_mut());
-        if screen.is_null() {
-            return None;
-        }
-        let mem = CreateCompatibleDC(screen);
-        let bmp = CreateCompatibleBitmap(screen, w, h);
-        let old = SelectObject(mem, bmp);
-
-        let ok = BitBlt(mem, 0, 0, w, h, screen, 0, 0, SRCCOPY);
-
-        // 32bpp top-down DIB (negative height) so rows are in natural order.
-        let mut bmi: BITMAPINFO = std::mem::zeroed();
-        bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
-        bmi.bmiHeader.biWidth = w;
-        bmi.bmiHeader.biHeight = -h;
-        bmi.bmiHeader.biPlanes = 1;
-        bmi.bmiHeader.biBitCount = 32;
-        bmi.bmiHeader.biCompression = BI_RGB as u32;
-
-        let mut buf = vec![0u8; (w as usize) * (h as usize) * 4];
-        let scanlines = GetDIBits(
-            mem,
-            bmp,
-            0,
-            h as u32,
-            buf.as_mut_ptr() as *mut _,
-            &mut bmi,
-            DIB_RGB_COLORS,
-        );
-
-        SelectObject(mem, old);
-        DeleteObject(bmp);
-        DeleteDC(mem);
-        ReleaseDC(null_mut(), screen);
-
-        if ok == 0 || scanlines == 0 {
-            return None;
-        }
-
-        // BGRA (GDI order) → RGB for the JPEG encoder.
-        let mut rgb = Vec::with_capacity((w as usize) * (h as usize) * 3);
-        for px in buf.chunks_exact(4) {
-            rgb.push(px[2]);
-            rgb.push(px[1]);
-            rgb.push(px[0]);
-        }
-
-        let mut out = std::io::Cursor::new(Vec::new());
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85)
-            .encode(&rgb, w as u32, h as u32, image::ExtendedColorType::Rgb8)
-            .ok()?;
-        Some(out.into_inner())
+    // Drop the alpha channel (JPEG has none).
+    let mut rgb = Vec::with_capacity((w as usize) * (h as usize) * 3);
+    for px in raw.chunks_exact(4) {
+        rgb.push(px[0]);
+        rgb.push(px[1]);
+        rgb.push(px[2]);
     }
-}
 
-#[cfg(not(windows))]
-pub fn capture_jpeg() -> Option<Vec<u8>> {
-    None
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85)
+        .encode(&rgb, w, h, image::ExtendedColorType::Rgb8)
+        .ok()?;
+    Some(out.into_inner())
 }

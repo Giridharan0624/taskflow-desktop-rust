@@ -64,7 +64,10 @@ jobs:
             libgtk-3-dev \
             patchelf \
             build-essential \
-            curl wget file
+            curl wget file \
+            libx11-dev libxi-dev libxtst-dev libxrandr-dev \
+            libxcb1-dev libxcb-randr0-dev \
+            libdbus-1-dev libpipewire-0.3-dev
 
       - uses: actions/setup-node@v4
         with:
