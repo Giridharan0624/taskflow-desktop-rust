@@ -98,11 +98,13 @@ pub fn start(app: &AppHandle) -> MonitorHandle {
         })
     });
 
-    // Jittered screenshot worker.
+    // Jittered screenshot worker. Shares `bucket` so a capture can be
+    // early-flushed with its screenshot_url attached (see screenshot_loop).
     tasks.push({
-        let (running, had_failure, app) = (running.clone(), had_failure.clone(), app.clone());
+        let (running, bucket, had_failure, app) =
+            (running.clone(), bucket.clone(), had_failure.clone(), app.clone());
         tauri::async_runtime::spawn(async move {
-            screenshot_loop(app, running, had_failure).await;
+            screenshot_loop(app, running, bucket, had_failure).await;
         })
     });
 
@@ -206,7 +208,7 @@ async fn heartbeat_loop(
         // Send the current bucket.
         let payload = {
             let mut b = bucket.lock().unwrap();
-            match snapshot(&b) {
+            match snapshot(&b, None) {
                 Some(p) => {
                     *b = Bucket::default();
                     Some(p)
@@ -227,7 +229,12 @@ async fn heartbeat_loop(
     }
 }
 
-async fn screenshot_loop(app: AppHandle, running: Arc<AtomicBool>, had_failure: Arc<AtomicBool>) {
+async fn screenshot_loop(
+    app: AppHandle,
+    running: Arc<AtomicBool>,
+    bucket: Arc<Mutex<Bucket>>,
+    had_failure: Arc<AtomicBool>,
+) {
     while running.load(Ordering::Relaxed) {
         // Recompute jitter each cycle (anti-evasion). rng is dropped before the
         // await so nothing non-Send crosses it.
@@ -275,7 +282,34 @@ async fn screenshot_loop(app: AppHandle, running: Arc<AtomicBool>, had_failure: 
                 chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
             );
             match api.upload_screenshot(&jpeg, &filename).await {
-                Ok(_) => mark_success(&app, &had_failure),
+                Ok(url) => {
+                    mark_success(&app, &had_failure);
+                    // Early-flush: snapshot the current bucket WITH the
+                    // screenshot_url attached and ship it immediately, then
+                    // reset — so the shot links to the exact activity window
+                    // it was captured in and the regular heartbeat doesn't
+                    // double-count. Mirrors the Go app's sendCurrentBucket().
+                    let payload = {
+                        let mut b = bucket.lock().unwrap();
+                        match snapshot(&b, Some(&url)) {
+                            Some(p) => {
+                                *b = Bucket::default();
+                                Some(p)
+                            }
+                            None => None,
+                        }
+                    };
+                    if let Some(payload) = payload {
+                        match api.send_heartbeat(payload.clone()).await {
+                            Ok(()) => mark_success(&app, &had_failure),
+                            Err(e) => {
+                                tracing::warn!(error = %e, "screenshot heartbeat send failed — queued");
+                                queue::enqueue_heartbeat(&app, &payload);
+                                mark_failure(&app, &had_failure);
+                            }
+                        }
+                    }
+                }
                 Err(e) => {
                     tracing::warn!(error = %e, "screenshot upload failed — queued");
                     queue::enqueue_screenshot(&app, &jpeg, &filename);
@@ -286,15 +320,18 @@ async fn screenshot_loop(app: AppHandle, running: Arc<AtomicBool>, had_failure: 
     }
 }
 
-/// Build the heartbeat JSON, or None when the bucket has no data. Matches the Go
-/// payload exactly: snake_case fields + RFC3339 UTC timestamp.
-fn snapshot(b: &Bucket) -> Option<Value> {
+/// Build the heartbeat JSON, or None when there's nothing to send. Matches the
+/// Go payload exactly: snake_case fields + RFC3339 UTC timestamp. When
+/// `screenshot_url` is set it is attached to the payload, and the bucket is
+/// emitted even with near-zero counts — a captured screenshot must always ship,
+/// otherwise it orphans in S3 with no activity record referencing it.
+fn snapshot(b: &Bucket, screenshot_url: Option<&str>) -> Option<Value> {
     let has_data = b.keyboard_count > 0
         || b.mouse_count > 0
         || b.active_seconds > 0
         || b.idle_seconds > 0
         || !b.app_usage.is_empty();
-    if !has_data {
+    if !has_data && screenshot_url.is_none() {
         return None;
     }
 
@@ -305,7 +342,7 @@ fn snapshot(b: &Bucket) -> Option<Value> {
         .map(|(app, _)| app.clone())
         .unwrap_or_default();
 
-    Some(json!({
+    let mut payload = json!({
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "keyboard_count": b.keyboard_count,
         "mouse_count": b.mouse_count,
@@ -313,7 +350,11 @@ fn snapshot(b: &Bucket) -> Option<Value> {
         "idle_seconds": b.idle_seconds,
         "top_app": top_app,
         "app_breakdown": b.app_usage,
-    }))
+    });
+    if let Some(url) = screenshot_url {
+        payload["screenshot_url"] = json!(url);
+    }
+    Some(payload)
 }
 
 /// Cumulative-counter delta with uint32 wrap handling (mirrors the Go formula).
