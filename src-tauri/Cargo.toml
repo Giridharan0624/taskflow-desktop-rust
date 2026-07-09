@@ -1,6 +1,6 @@
 [package]
 name = "taskflow-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "TaskFlow desktop companion (Tauri v2)"
 authors = ["NeuroStack"]
 edition = "2021"
