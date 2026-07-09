@@ -51,6 +51,8 @@
           "libxi6",
           "libxtst6",
           "libxrandr2",
+          "libxss1",
+          "libxext6",
           "libxcb1",
           "libxcb-randr0",
           "libdbus-1-3",

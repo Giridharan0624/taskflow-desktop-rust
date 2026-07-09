@@ -45,7 +45,7 @@ jobs:
             patchelf \
             build-essential \
             curl wget file \
-            libx11-dev libxi-dev libxtst-dev libxrandr-dev \
+            libx11-dev libxi-dev libxtst-dev libxrandr-dev libxss-dev libxext-dev \
             libxcb1-dev libxcb-randr0-dev \
             libdbus-1-dev libpipewire-0.3-dev
 
