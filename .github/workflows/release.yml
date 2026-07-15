@@ -27,27 +27,27 @@ jobs:
           - os: windows-latest
             label: windows
             bundles: nsis
+            targetArg: ''
             artifacts: |
               src-tauri/target/release/bundle/nsis/*-setup.exe
           - os: ubuntu-22.04
             label: linux
             bundles: appimage,deb
+            targetArg: ''
             artifacts: |
               src-tauri/target/release/bundle/appimage/*.AppImage
               src-tauri/target/release/bundle/deb/*.deb
-          # macos-latest is Apple Silicon -> aarch64 dmg
+          # ONE macOS job producing a UNIVERSAL dmg (Intel + Apple Silicon) — the
+          # same single download the Go app shipped. Built on the arm64 runner by
+          # cross-compiling both arches and lipo-ing them together. (Don't split
+          # this into a separate macos-13 Intel job: GitHub retired the Intel
+          # runners, so that label never gets picked up and the job hangs.)
           - os: macos-latest
-            label: macos-arm
+            label: macos
             bundles: dmg
+            targetArg: '--target universal-apple-darwin'
             artifacts: |
-              src-tauri/target/release/bundle/dmg/*.dmg
-          # macos-13 is Intel -> x64 dmg (Tauri names the arch into the file,
-          # so both dmgs coexist in the release without colliding)
-          - os: macos-13
-            label: macos-intel
-            bundles: dmg
-            artifacts: |
-              src-tauri/target/release/bundle/dmg/*.dmg
+              src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
     runs-on: ${{ matrix.os }}
     name: bundle (${{ matrix.label }})
     # V2 stack config, baked into the binary at build time.
@@ -96,11 +96,16 @@ jobs:
           workspaces: src-tauri
           key: ${{ matrix.label }}-release
 
+      # Universal macOS needs both arch targets present to lipo them together.
+      - name: Add macOS universal targets
+        if: matrix.label == 'macos'
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
       - name: Install frontend deps
         run: npm ci
 
       - name: Build bundles
-        run: npm run tauri build -- --bundles ${{ matrix.bundles }}
+        run: npm run tauri build -- --bundles ${{ matrix.bundles }} ${{ matrix.targetArg }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
