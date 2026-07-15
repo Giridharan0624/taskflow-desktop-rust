@@ -1,4 +1,5 @@
 # ed25519 release public key (base64), one line, no comment.
-# EMPTY = unsigned. Unlike the Go app (which silently skipped verification when
-# this was blank — a security bug), release builds here REFUSE to auto-install
-# until a real key is committed on the next line. See updater/verify.rs.
+# The private half lives ONLY in the GitHub secret RELEASE_SIGNING_KEY_B64 and
+# signs SHA256SUMS at release time. Release builds refuse to auto-install any
+# update whose SHA256SUMS does not verify against this key. See updater/verify.rs.
+LRrqVmXDrRi/znWhGuNudvLNVum09rNh7TebLHwqNmk=
