@@ -13,21 +13,18 @@ Two workflows in `.github/workflows/`:
 
 ## One-time setup
 
-### 1. Config secrets (V2 stack — baked into release binaries)
+### 1. Config — nothing to do
 
-Repo → Settings → Secrets and variables → Actions → **New repository secret**:
+The V2 stack config (API URL, Cognito region/pool/client, dashboard URL) is
+**inlined in `release.yml`**, the same way the Go app's workflow does it. These
+are public client values — the identical Cognito client ID and API URL already
+ship inside the web app's browser bundle — so they are not secrets, and inlining
+them means a release can never be built with empty config.
 
-| Secret | Value |
-|---|---|
-| `TASKFLOW_API_URL` | `https://mcx0iyvisf.execute-api.ap-south-1.amazonaws.com/prod` |
-| `TASKFLOW_COGNITO_REGION` | `ap-south-1` |
-| `TASKFLOW_COGNITO_POOL_ID` | `ap-south-1_yWxQYrYXp` |
-| `TASKFLOW_COGNITO_CLIENT_ID` | `6eaa6ej7a3j1p5jm5ooq1ui0g3` |
-| `TASKFLOW_WEB_DASHBOARD_URL` | *(optional)* the V2 web app URL |
+For **local** builds, `build-env.v2.ps1` (git-ignored) sets the same values; for
+`tauri dev`, `src-tauri/config.json` is the fallback.
 
-(These mirror `build-env.v2.ps1`, which stays local/git-ignored.)
-
-### 2. Update signing key (Ed25519)
+### 2. Update signing key (Ed25519) — the only real secret
 
 Generate a keypair **offline** (never let the private seed touch CI or git):
 

@@ -50,13 +50,20 @@ jobs:
               src-tauri/target/release/bundle/dmg/*.dmg
     runs-on: ${{ matrix.os }}
     name: bundle (${{ matrix.label }})
-    # V2 config baked into the binary at build time (kept out of the repo).
+    # V2 stack config, baked into the binary at build time.
+    #
+    # These are inlined rather than pulled from secrets, exactly as the Go app's
+    # release.yml does: they are PUBLIC client values — the same Cognito client ID
+    # and API URL already ship inside the web app's browser bundle. Inlining them
+    # removes the failure mode where a forgotten secret silently produces
+    # installers that panic at startup with empty config. The only true secret is
+    # RELEASE_SIGNING_KEY_B64 (the update-signing private key).
     env:
-      TASKFLOW_API_URL: ${{ secrets.TASKFLOW_API_URL }}
-      TASKFLOW_COGNITO_REGION: ${{ secrets.TASKFLOW_COGNITO_REGION }}
-      TASKFLOW_COGNITO_POOL_ID: ${{ secrets.TASKFLOW_COGNITO_POOL_ID }}
-      TASKFLOW_COGNITO_CLIENT_ID: ${{ secrets.TASKFLOW_COGNITO_CLIENT_ID }}
-      TASKFLOW_WEB_DASHBOARD_URL: ${{ secrets.TASKFLOW_WEB_DASHBOARD_URL }}
+      TASKFLOW_API_URL: https://mcx0iyvisf.execute-api.ap-south-1.amazonaws.com/prod
+      TASKFLOW_COGNITO_REGION: ap-south-1
+      TASKFLOW_COGNITO_POOL_ID: ap-south-1_yWxQYrYXp
+      TASKFLOW_COGNITO_CLIENT_ID: 6eaa6ej7a3j1p5jm5ooq1ui0g3
+      TASKFLOW_WEB_DASHBOARD_URL: https://taskflow-ns.vercel.app
     steps:
       - uses: actions/checkout@v4
 
