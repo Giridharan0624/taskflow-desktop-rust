@@ -97,6 +97,16 @@ pub async fn check_for_update() -> AppResult<UpdateInfo> {
     if cfg!(debug_assertions) {
         return Ok(UpdateInfo::none(&current, &current));
     }
+    // Never advertise an update we would then refuse to install: without a
+    // release key, `install_update` fail-closes on unsigned releases, so
+    // surfacing the banner would dead-end the user. Stay quiet until signing
+    // is configured (see RELEASE.md).
+    if !verify::pubkey_present() {
+        tracing::warn!(
+            "update check skipped: no release public key configured — unsigned updates are refused"
+        );
+        return Ok(UpdateInfo::none(&current, &current));
+    }
 
     let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
     let resp = client(Duration::from_secs(30))?

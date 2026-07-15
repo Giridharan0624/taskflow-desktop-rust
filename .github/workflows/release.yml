@@ -35,8 +35,16 @@ jobs:
             artifacts: |
               src-tauri/target/release/bundle/appimage/*.AppImage
               src-tauri/target/release/bundle/deb/*.deb
+          # macos-latest is Apple Silicon -> aarch64 dmg
           - os: macos-latest
-            label: macos
+            label: macos-arm
+            bundles: dmg
+            artifacts: |
+              src-tauri/target/release/bundle/dmg/*.dmg
+          # macos-13 is Intel -> x64 dmg (Tauri names the arch into the file,
+          # so both dmgs coexist in the release without colliding)
+          - os: macos-13
+            label: macos-intel
             bundles: dmg
             artifacts: |
               src-tauri/target/release/bundle/dmg/*.dmg
