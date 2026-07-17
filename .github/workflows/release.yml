@@ -63,7 +63,10 @@ jobs:
       TASKFLOW_COGNITO_REGION: ap-south-1
       TASKFLOW_COGNITO_POOL_ID: ap-south-1_yWxQYrYXp
       TASKFLOW_COGNITO_CLIENT_ID: 6eaa6ej7a3j1p5jm5ooq1ui0g3
-      TASKFLOW_WEB_DASHBOARD_URL: https://taskflow-ns.vercel.app
+      # Canonical app domain. Must match the backend's `app_url` (which builds
+      # invite/welcome email links) and be present in the stack's cors_origins,
+      # otherwise users bounce between two hostnames.
+      TASKFLOW_WEB_DASHBOARD_URL: https://taskflow.neurostack.in
     steps:
       - uses: actions/checkout@v4
 
